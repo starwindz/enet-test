@@ -1,4 +1,4 @@
-// enet-test-new-update-v2
+// enet-test-new-update-v2.1
 #define QUICK_TEST
 
 // include
@@ -84,7 +84,7 @@ int udp_p2p::init()
     // -- local create => local
     localAddress.host = ENET_HOST_ANY;
     localAddress.port = local_port;
-    local = enet_host_create(&localAddress, 32, 2, 0, 0);
+    local = enet_host_create(&localAddress, 2, 1, 0, 0);
     if (local == NULL) {
         printf("an error occurred while trying to create an ENet local.\n");
         return 1;
@@ -110,18 +110,6 @@ int udp_p2p::close()
     enet_peer_disconnect(remotePeer, 0);
     enet_host_destroy(local);
     enet_deinitialize();
-
-    return 0;
-}
-
-int udp_p2p::send_buffer()
-{
-    if (state == cs_Connected) {
-        sent_buffer[0] = pc_Ping;
-        ENetPacket* packetPing = enet_packet_create(sent_buffer, buffer_size, ENET_PACKET_FLAG_RELIABLE);
-        enet_peer_send(remotePeer, 0, packetPing);
-        printf("sent ping\n");
-    }
 
     return 0;
 }
@@ -191,6 +179,18 @@ void udp_p2p::connecting()
         ENetPacket* packetPing = enet_packet_create(sent_buffer, buffer_size, 0);
         enet_peer_send(remotePeer, 0, packetPing);
     }
+}
+
+int udp_p2p::send_buffer()
+{
+    if (state == cs_Connected) {
+        sent_buffer[0] = pc_Ping;
+        ENetPacket* packetPing = enet_packet_create(sent_buffer, buffer_size, ENET_PACKET_FLAG_RELIABLE);
+        enet_peer_send(remotePeer, 0, packetPing);
+        printf("sent ping\n");
+    }
+
+    return 0;
 }
 
 int main(int argc, char** argv)
