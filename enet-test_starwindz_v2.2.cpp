@@ -1,15 +1,21 @@
-// enet-test-starwindz-v2.3
+// enet-test-starwindz-v2.2
 #define QUICK_TEST
  
 // include
 #include <stdio.h>
 #include <conio.h>
-#include <string.h>
+#include <thread>
+#include <atomic>
 #include "enet\enet.h"
  
 // set lib
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "Winmm.lib")
+ 
+// connection state
+#define cs_Waiting    0
+#define cs_Connected  1
+#define cs_Error      2
  
 // packet command
 #define pc_None  0
@@ -17,7 +23,7 @@
 #define pc_Ping  2
 #define pc_Pong  30
  
-#define MAX_PACKET_SIZE 256
+#define MAX_PACKET_BUFFER_SIZE 256
  
 __pragma(pack(push, 1))
 struct MPGameSetting {
@@ -27,16 +33,18 @@ struct MPGameSetting {
     byte gameStyle;
     byte pitchType;
     byte status;    // 0:waiting, 1:ready
+    byte cmd;
 };
 __pragma(pack(pop))
  
 class udp_p2p {
 public:
+    int mode; // 0:local-remote, 1:remote-local
     char remote_ip[40] = { 0, };
     int remote_port, local_port;
  
-    char sent_packet[MAX_PACKET_SIZE];
-    char received_packet[MAX_PACKET_SIZE];
+    char sent_buffer[MAX_PACKET_BUFFER_SIZE];
+    char received_buffer[MAX_PACKET_BUFFER_SIZE];
     int buffer_size;
  
     ENetAddress local_address, remote_address;
@@ -44,10 +52,10 @@ public:
     ENetPeer* remote_peer = nullptr;
     ENetPeer* connected_peer = nullptr;
     ENetEvent event;
- 
+    int state = cs_Waiting;
     bool send_back_ping_when_connected;
     bool send_back_pong_when_received;
-    int received_packet_command;
+    int received_packet_command_type;
     bool connected = false;
    
     bool loop = true;
@@ -61,10 +69,10 @@ public:
     );
     int init();
     int close();
-    int disconnect();
  
-    int send_packet();
-    int receive_packet();
+    int send_buffer();
+    int receive_buffer();
+    int disconnect();
 };
  
 udp_p2p g_udp_p2p;
@@ -96,13 +104,13 @@ int udp_p2p::init()
     }
  
     // -- local create => local
-    // only allow incoming connections from the remote ip  
+    // Only allow incoming connections from the remote ip  
     enet_address_set_host_ip(&local_address, remote_ip);
     local_address.port = local_port;
     local_host = enet_host_create(&local_address, 2, 1, 0, 0);
     if (local_host == NULL) {
         printf("an error occurred while trying to create an ENet local host\n");
-       return 1;
+        return 1;
     }
     printf("created local on port %d\n", local_port);
  
@@ -113,6 +121,7 @@ int udp_p2p::init()
     printf("try to connect from local to remote on port %d\n", remote_port);
  
     // -- other init
+    state = cs_Waiting;
     loop = true;
     loop_count = 0;
     punch_count = 0;
@@ -135,23 +144,16 @@ int udp_p2p::close()
     return 0;
 }
  
-int udp_p2p::disconnect()
-{
-    enet_peer_disconnect(connected_peer, 0);
- 
-    return 0;
-}
- 
-int udp_p2p::receive_packet()
+int udp_p2p::receive_buffer()
 {
     Sleep(1);
     loop_count++;
  
-    while (enet_host_service(local_host, &event, 0) > 0) {
+   while (enet_host_service(local_host, &event, 0) > 0) {
         char ip[40];
         enet_address_get_host_ip(&event.peer->address, ip, 40);
  
-        received_packet_command = pc_None;
+        received_packet_command_type = pc_None;
         switch (event.type) {
             case ENET_EVENT_TYPE_CONNECT: {
                 if (!connected_peer) {
@@ -166,7 +168,7 @@ int udp_p2p::receive_packet()
                     }
                     connected_peer = event.peer;
                     if (send_back_ping_when_connected) {
-                        send_packet();
+                        send_buffer();
                         printf("(sent send_back_ping when connected)\n");
                     }
                 }
@@ -174,29 +176,29 @@ int udp_p2p::receive_packet()
             }
             case ENET_EVENT_TYPE_RECEIVE: {
                 // -- receive ping packet
-                memcpy(received_packet, (char*)(event.packet->data), buffer_size);
-                auto pc = received_packet[0];
+                memcpy(received_buffer, (char*)(event.packet->data), buffer_size);
+                auto pc = received_buffer[0];
                 if (pc == pc_Ping) {
-                    received_packet_command = pc_Ping;
+                    received_packet_command_type = pc_Ping;
                     printf("received ping from %s:%d\n", ip, (int)event.peer->address.port);
  
                     // -- send pong packet
                     if (send_back_pong_when_received) {
-                        sent_packet[0] = pc_Pong;
-                        ENetPacket* packet_pong = enet_packet_create(sent_packet, buffer_size, ENET_PACKET_FLAG_RELIABLE);
+                        sent_buffer[0] = pc_Pong;
+                        ENetPacket* packet_pong = enet_packet_create(sent_buffer, buffer_size, ENET_PACKET_FLAG_RELIABLE);
                         enet_peer_send(event.peer, 0, packet_pong);
                         enet_packet_destroy(event.packet);
                         printf("sent pong\n");
                     }                  
                 }
                 else if (pc == pc_Pong) {
-                    received_packet_command = pc_Pong;                
+                    received_packet_command_type = pc_Pong;                
                     printf("received pong number %d from %s:%d\n", ++pong_count, ip, (int)event.peer->address.port);
                 }
                 else if (pc == pc_Punch) {
                     // unexpected, punch messages should happen before the connection,
                     // in order to help establish it              
-                    received_packet_command = pc_Punch;
+                    received_packet_command_type = pc_Punch;
                     printf("received punch from %s:%d\n", ip, (int)event.peer->address.port);
                 }
                 enet_packet_destroy(event.packet);
@@ -221,8 +223,8 @@ int udp_p2p::receive_packet()
     // until we are connected, send a packet approx 10 times a second
     // in order to try and punch a hole through the NAT
     if (!connected_peer && (loop_count % 100 == 0)) {
-        sent_packet[0] = pc_Punch;
-        ENetPacket* packet_punch = enet_packet_create(sent_packet, buffer_size, 0);
+        sent_buffer[0] = pc_Punch;
+        ENetPacket* packet_punch = enet_packet_create(sent_buffer, buffer_size, 0);
         enet_peer_send(remote_peer, 0, packet_punch);
         printf("send punch %d to remote peer\n", ++punch_count);
     }
@@ -230,14 +232,21 @@ int udp_p2p::receive_packet()
     return event.type;
 }
  
-int udp_p2p::send_packet()
+int udp_p2p::send_buffer()
 {
     if (connected_peer) {
-        sent_packet[0] = pc_Ping;
-        ENetPacket* packet_ping = enet_packet_create(sent_packet, buffer_size, ENET_PACKET_FLAG_RELIABLE);
+        sent_buffer[0] = pc_Ping;
+        ENetPacket* packet_ping = enet_packet_create(sent_buffer, buffer_size, ENET_PACKET_FLAG_RELIABLE);
         enet_peer_send(remote_peer, 0, packet_ping);
         printf("sent ping\n");
     }
+ 
+    return 0;
+}
+ 
+int udp_p2p::disconnect()
+{
+    enet_peer_disconnect(connected_peer, 0);
  
     return 0;
 }
@@ -280,10 +289,10 @@ int main(int argc, char** argv)
         return 1;
     }
  
-    // menu loop
+    // menu loop (onDraw loop of swos menu)
     while (g_udp_p2p.loop) {
         // g_udp_p2p.connected is true when connected, false when not connected
-        if (g_udp_p2p.receive_packet() == ENET_EVENT_TYPE_DISCONNECT) {
+        if (g_udp_p2p.receive_buffer() == ENET_EVENT_TYPE_DISCONNECT) {
             // exit menu loop
             break;
         }
@@ -291,7 +300,7 @@ int main(int argc, char** argv)
         if (_kbhit()) {
             auto c = _getch();
             if (c == '1') {
-                g_udp_p2p.send_packet();
+                g_udp_p2p.send_buffer();
             }
             else if (c == 'q') {
                 g_udp_p2p.disconnect();
