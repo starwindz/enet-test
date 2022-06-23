@@ -25,6 +25,7 @@ using namespace std;
 #define cc_Normal 0
 #define cc_Exit   1
 #define MAX_PACKET_SIZE 256
+
 __pragma(pack(push, 1))
 struct MPGameSetting {
     byte pc;        // packet command
@@ -36,6 +37,7 @@ struct MPGameSetting {
     byte cc;        // control command
 };
 __pragma(pack(pop))
+
 class udp_p2p {
 public:
     char remote_ip[40] = { 0, };
@@ -57,6 +59,7 @@ public:
     bool loop = true;
     int loop_count = 0, punch_count = 0;
     int pong_count = 0;
+	
 public:
     int setup(
         int _local_port, const char* _remote_ip, int _remote_port, int _buffer_size,
@@ -69,7 +72,9 @@ public:
     int send_packet();
     int receive_packet();
 };
+
 udp_p2p g_udp_p2p;
+
 // for perfect setting sync including menu init, following two flags should be all true
 // for chatting messages, set flags to false and false since no pong needed
 int udp_p2p::setup(
@@ -83,8 +88,10 @@ int udp_p2p::setup(
     buffer_size = _buffer_size;
     send_back_ping_when_connected = _send_back_ping_when_connected;
     send_back_pong_when_received = _send_back_pong_when_received;
+	
     return 0;
 }
+
 int udp_p2p::init()
 {
     // init
@@ -93,6 +100,7 @@ int udp_p2p::init()
         printf("an error occurred while initializing ENet.\n");
         return 1;
     }
+	
     // -- local create => local
     // only allow incoming connections from the remote ip 
     enet_address_set_host_ip(&local_address, remote_ip);
@@ -103,11 +111,13 @@ int udp_p2p::init()
        return 1;
     }
     printf("created local on port %d\n", local_port);
+	
     // -- remote create => remote_peer
     enet_address_set_host_ip(&remote_address, remote_ip);
     remote_address.port = remote_port;
     remote_peer = enet_host_connect(local_host, &remote_address, 2, 0);
     printf("try to connect from local to remote on port %d\n", remote_port);
+	
     // -- other init
     loop = true;
     loop_count = 0;
@@ -116,8 +126,10 @@ int udp_p2p::init()
     connected = false;
   
     printf("init done\n");
+	
     return 0;
 }
+
 int udp_p2p::close()
 {
     // close
@@ -125,8 +137,10 @@ int udp_p2p::close()
     enet_peer_disconnect(remote_peer, 0);
     enet_host_destroy(local_host);
     enet_deinitialize();
+	
     return 0;
 }
+
 int udp_p2p::disconnect()
 {
     if (connected_peer) {
@@ -149,6 +163,7 @@ int udp_p2p::prevent_disconnect()
  
     return 1;
 }
+
 int udp_p2p::receive_packet()
 {
     Sleep(1);
@@ -242,6 +257,7 @@ int udp_p2p::receive_packet()
  
     return event.type;
 }
+
 int udp_p2p::send_packet()
 {
     if (connected_peer) {
@@ -318,11 +334,13 @@ int main(int argc, char** argv)
 #else
     g_udp_p2p.setup(atoi(argv[1]), argv[2], atoi(argv[3]), sizeof(MPGameSetting), true, true);
 #endif
+
     // init reliable udp
     if (g_udp_p2p.init() != 0) {
         // if init failed, do not enter to the menu loop
         return 1;
     }
+	
     // menu loop
     printf("press '1' to send packet and 'q' to quit\n");
     printf("press 's' to open menu(prevent_disconnect on)\n");
@@ -362,5 +380,3 @@ int main(int argc, char** argv)
   
     return 0;
 }
-
- 
