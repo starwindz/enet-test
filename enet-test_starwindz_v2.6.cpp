@@ -1,7 +1,4 @@
-// enet-test-starwindz-v2.6.1
-/*
-"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\msbuild.exe" -verbosity:quiet /clp:ErrorsOnly /p:Configuration="Release" /p:Platform="x86" %*
-*/
+// enet-test-starwindz-v2.6
 #define QUICK_TEST
 // include
 #include <stdio.h>
@@ -47,7 +44,7 @@ public:
     ENetHost* local_host;
     ENetPeer* remote_peer = nullptr;
     ENetPeer* connected_peer = nullptr;
-    ENetEvent event;
+   ENetEvent event;
     bool send_back_ping_when_connected;
     bool send_back_pong_when_received;
     int received_packet_command;
@@ -61,11 +58,10 @@ public:
     int setup(
         int _local_port, const char* _remote_ip, int _remote_port, int _buffer_size,
         bool _send_back_ping_when_connected, bool _send_back_pong_when_received
-    );
+   );
     int init();
     int close();
     int disconnect();
-    int prevent_disconnect();
     int send_packet();
     int receive_packet();
 };
@@ -138,17 +134,6 @@ int udp_p2p::disconnect()
  
     return 1;
 }
- 
-int udp_p2p::prevent_disconnect()
-{
-    if (connected_peer) {
-        enet_host_service(local_host, &event, 0);
- 
-        return 0;
-    }
- 
-    return 1;
-}
 int udp_p2p::receive_packet()
 {
     Sleep(1);
@@ -164,11 +149,11 @@ int udp_p2p::receive_packet()
                 if (!connected_peer) {
                     connected = true;
                     if (remote_peer == event.peer) {
-                        printf("connected to %s:%u\n",
+                        printf("we connected to %s:%u\n",
                             ip, event.peer->address.port);
                     }
                     else {
-                        printf("accepted a connection from %s:%u\n",
+                        printf("we accepted a connection from %s:%u\n",
                             ip, event.peer->address.port);
                     }
                     connected_peer = event.peer;
@@ -244,7 +229,7 @@ int udp_p2p::receive_packet()
 }
 int udp_p2p::send_packet()
 {
-    if (connected_peer) {
+   if (connected_peer) {
         sent_packet[0] = pc_Ping;
         ENetPacket* packet_ping = enet_packet_create(sent_packet, buffer_size, ENET_PACKET_FLAG_RELIABLE);
         enet_peer_send(remote_peer, 0, packet_ping);
@@ -254,9 +239,7 @@ int udp_p2p::send_packet()
 }
  
 /*
-in these related swos menus,
-receiveGameSetting() which has enet_host_service should be inserted into onDraw function
-in order to prevent disconnecting
+in these related swos menus, enet_host_service should be inserted into onDraw functions
  
 GoGetTeamsForPlay
 -> chooseTeamsMenu (235654)
@@ -266,24 +249,12 @@ SelectTeamsFinalMenu
    -> chooseTeamsFriendlyMenu (236880)
    -> chooseTeamsFriendly (26880)
 */
-void sub_menu(char c, float secs)
+void func_delay(float secs)
 {
     clock_t delay = secs * CLOCKS_PER_SEC;
     clock_t start = clock();
-    bool loop = true;
-    while (loop) {
-        if (clock() - start >= delay) {
-            loop = false;
-        }
-        if (_kbhit()) {
-            auto c = _getch();
-            if (c == 'q') {
-                loop = false;
-            }
-        }
-        if (c == 's') {
-            g_udp_p2p.prevent_disconnect();
-        }
+    while (clock() - start < delay) {
+        enet_host_service(g_udp_p2p.local_host, &(g_udp_p2p.event), 0);
     }
 }
  
@@ -324,9 +295,6 @@ int main(int argc, char** argv)
         return 1;
     }
     // menu loop
-    printf("press '1' to send packet and 'q' to quit\n");
-    printf("press 's' to open menu(prevent_disconnect on)\n");
-    printf("press 'a' to open menu(prevent_disconnect off)\n");
     while (true) {
         // simulating 30fps in swos menu
         Sleep(33);
@@ -342,10 +310,10 @@ int main(int argc, char** argv)
             if (c == '1') {
                 g_udp_p2p.send_packet();
             }
-            else if (c == 's' || c == 'a') {
-                printf("opening sub menu (press 'q' to escape)...\n");
-                sub_menu(c, 120);
-                printf("closing sub menu...\n");
+            else if (c == 's') {
+                printf("opening other menu...\n");
+                func_delay(8);
+                printf("closing other menu...\n");
             }
             else if (c == 'q') {
                 printf("q pressed, exit app\n");
@@ -356,6 +324,7 @@ int main(int argc, char** argv)
             }
         }
     }
+ 
  
     // close reliable udp
     g_udp_p2p.close();
