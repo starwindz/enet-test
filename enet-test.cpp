@@ -150,10 +150,11 @@ int udp_p2p::disconnect()
 
     return 1;
 }
+
 int udp_p2p::prevent_disconnect()
 {
     if (connected_peer) {
-       enet_host_service(local_host, &event, 0);
+        enet_host_service(local_host, &event, 0);
         return 0;
     }
 

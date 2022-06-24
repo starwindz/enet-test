@@ -150,10 +150,11 @@ int udp_p2p::disconnect()
 
     return 1;
 }
+
 int udp_p2p::prevent_disconnect()
 {
     if (connected_peer) {
-       enet_host_service(local_host, &event, 0);
+        enet_host_service(local_host, &event, 0);
         return 0;
     }
 
@@ -377,9 +378,9 @@ int main(int argc, char** argv)
             }
         }
     }
-	
+    
     // close reliable udp
     g_udp_p2p.close();
     
-	return 0;
+    return 0;
 }
